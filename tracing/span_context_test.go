@@ -67,8 +67,11 @@ func TestSpan_FinishSendsOverUDP(t *testing.T) {
 
 	select {
 	case got := <-recv:
-		if got.Method != "db.query" {
-			t.Errorf("Method = %q, want the span name for a non-HTTP span", got.Method)
+		if got.Name != "db.query" {
+			t.Errorf("Name = %q, want db.query", got.Name)
+		}
+		if got.Method != "" {
+			t.Errorf("Method = %q, want empty for a non-HTTP span", got.Method)
 		}
 		if got.Service != "worker" || got.TraceID != "t1" || got.SpanID != "s1" {
 			t.Errorf("got = %+v", got)
@@ -158,7 +161,7 @@ func TestMiddleware_ChildSpanNestsUnderRootSpan(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		select {
 		case s := <-recv:
-			if s.Method == "db.query" {
+			if s.Name == "db.query" {
 				childSpan = s
 			} else {
 				rootSpan = s
@@ -179,6 +182,9 @@ func TestMiddleware_ChildSpanNestsUnderRootSpan(t *testing.T) {
 	}
 	if childSpan.Tags["table"] != "orders" {
 		t.Errorf("child tags = %v, missing table=orders", childSpan.Tags)
+	}
+	if rootSpan.Name != "" {
+		t.Errorf("root span Name = %q, want empty (already fully identified by method/path)", rootSpan.Name)
 	}
 	if rootSpan.Method != http.MethodGet || rootSpan.Status != http.StatusOK {
 		t.Errorf("root span = %+v, want GET/200", rootSpan)
