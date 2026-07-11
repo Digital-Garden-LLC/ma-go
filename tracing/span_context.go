@@ -126,23 +126,16 @@ func (s *Span) Finish() {
 	}
 	s.mu.Unlock()
 
-	// Method/Path/Status are HTTP-specific wire fields with no real
-	// equivalent for a generic operation span. Rather than adding a new
-	// wire field today (which would need a matching change on the
-	// ingestion/ClickHouse side to actually be queryable), a child span's
-	// name is carried in Method -- e.g. "db.query" sits in the same slot
-	// "GET" would for the root HTTP span. This is a pragmatic reuse of the
-	// existing wire format, not a clean model: Path/Status stay empty/zero
-	// for a non-HTTP span, and "db.query" next to "GET" in the same column
-	// reads oddly. A dedicated name/kind field, queryable independently of
-	// the HTTP-shaped columns, is the real fix -- that's a miniargus-side
-	// ingestion/schema change, out of scope for this SDK-only change.
+	// Method/Path/Status are HTTP-specific; Name is the generic operation
+	// name for anything else. The root HTTP span (from Middleware) sets
+	// the former and leaves Name empty; every other span sets Name and
+	// leaves Method/Path/Status at their zero values.
 	if s.isHTTP {
 		wire.Method = s.method
 		wire.Path = s.path
 		wire.Status = s.status
 	} else {
-		wire.Method = s.name
+		wire.Name = s.name
 	}
 
 	if s.conn == nil {
