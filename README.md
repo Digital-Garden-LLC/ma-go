@@ -70,12 +70,10 @@ func checkoutHandler(w http.ResponseWriter, r *http.Request) {
   deferred immediately after `StartSpan`. Idempotent, so a deferred
   `Finish()` alongside an explicit one on an error path won't double-send.
 
-**Wire-format caveat, worth knowing:** a child span's `name` (e.g.
-`"db.query"`) is carried in the same field the root HTTP span uses for its
-HTTP method — there's no dedicated operation-name column in miniargus's
-`traces` table yet, so this is a pragmatic reuse of the existing field
-rather than a clean model. `Path`/`Status` stay empty/zero for a non-HTTP
-span. A real fix needs a schema/ingestion change on the miniargus side.
+A child span's `name` (e.g. `"db.query"`) is sent in its own field, distinct
+from the root HTTP span's `method`/`path`/`status` — the root span leaves
+`name` empty (it's already fully identified by method/path), and every
+other span leaves `method`/`path`/`status` at their zero values.
 
 ## events — custom application events
 
