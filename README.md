@@ -40,9 +40,42 @@ that satisfies that interface (e.g. `chi.Router`).
 
 Incoming `traceparent` headers (W3C Trace Context) are honored — a request
 arriving with one continues that trace as a child span; otherwise a new
-root span is started. Only one span is emitted per request today (the
-top-level HTTP span); there's no child-span API yet for instrumenting
-operations nested inside a handler (a DB call, a downstream request, etc.).
+root span is started.
+
+### Child spans
+
+`Middleware` installs the root span on the request's `context.Context`, so
+anything the handler calls can nest a child span under it with `StartSpan`
+— a DB query, a downstream HTTP call, a cache lookup:
+
+```go
+func checkoutHandler(w http.ResponseWriter, r *http.Request) {
+    ctx, span := tracing.StartSpan(r.Context(), "db.query")
+    rows, err := db.QueryContext(ctx, "SELECT ...")
+    span.SetError(err) // no-op if err is nil
+    span.Finish()
+    // ...
+}
+```
+
+- `StartSpan(ctx, name)` returns a new `context.Context` carrying the child
+  span as current — pass it into whatever the operation itself calls, so
+  further nesting works — and the `*Span` itself. Safe to call even outside
+  a traced request (e.g. in a background job): it just starts a new root of
+  its own rather than panicking.
+- `span.SetTag(key, value)` attaches an arbitrary tag.
+- `span.SetError(err)` marks the span failed and records `err`'s message;
+  a no-op if `err` is nil, so it's always safe to call unconditionally.
+- `span.Finish()` computes duration and sends the span — typically
+  deferred immediately after `StartSpan`. Idempotent, so a deferred
+  `Finish()` alongside an explicit one on an error path won't double-send.
+
+**Wire-format caveat, worth knowing:** a child span's `name` (e.g.
+`"db.query"`) is carried in the same field the root HTTP span uses for its
+HTTP method — there's no dedicated operation-name column in miniargus's
+`traces` table yet, so this is a pragmatic reuse of the existing field
+rather than a clean model. `Path`/`Status` stay empty/zero for a non-HTTP
+span. A real fix needs a schema/ingestion change on the miniargus side.
 
 ## events — custom application events
 
