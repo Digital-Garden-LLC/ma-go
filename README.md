@@ -1,9 +1,9 @@
 # ma-go
 
-Go SDK for [miniargus](https://github.com/Digital-Garden-LLC/miniargus), a
-self-hosted observability platform. Two independent packages your
-application imports to talk to the local miniargus agent — neither has any
-dependency on the other, or on anything outside the Go standard library.
+Go SDK for miniargus, a self-hosted observability platform. Two
+independent packages your application imports to talk to the local
+miniargus agent — neither has any dependency on the other, or on anything
+outside the Go standard library.
 
 ```sh
 go get github.com/Digital-Garden-LLC/ma-go
