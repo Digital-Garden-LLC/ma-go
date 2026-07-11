@@ -6,7 +6,7 @@
 package tracing
 
 import (
-	"encoding/json"
+	"context"
 	"net"
 	"net/http"
 	"strings"
@@ -53,39 +53,36 @@ func Middleware(next http.Handler, opts ...Option) http.Handler {
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	start := time.Now().UTC()
 	traceID, parentID := traceContextFrom(r.Header.Get("traceparent"))
 	requestID := r.Header.Get("X-Request-Id")
 	if requestID == "" {
 		requestID = newID(8)
 	}
 
+	// The root span is installed on the request's context so handler code
+	// (and anything it calls) can nest child spans under it via StartSpan
+	// -- see span_context.go. isHTTP marks it for Finish's Method/Path/
+	// Status handling, which only ever applies to this one span per
+	// request.
+	root := &Span{
+		conn:     h.conn,
+		service:  h.cfg.service,
+		traceID:  traceID,
+		spanID:   newID(8),
+		parentID: parentID,
+		start:    time.Now().UTC(),
+		tags:     map[string]string{"request_id": requestID},
+		isHTTP:   true,
+	}
+	ctx := context.WithValue(r.Context(), spanContextKey{}, root)
+
 	rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
-	h.next.ServeHTTP(rec, r)
+	h.next.ServeHTTP(rec, r.WithContext(ctx))
 
-	h.send(span{
-		TS:         start,
-		TraceID:    traceID,
-		SpanID:     newID(8),
-		ParentID:   parentID,
-		Service:    h.cfg.service,
-		Method:     r.Method,
-		Path:       r.URL.Path,
-		Status:     uint16(rec.status),
-		DurationMS: float64(time.Since(start)) / float64(time.Millisecond),
-		Tags:       map[string]string{"request_id": requestID},
-	})
-}
-
-func (h *handler) send(s span) {
-	if h.conn == nil {
-		return
-	}
-	payload, err := json.Marshal(s)
-	if err != nil {
-		return
-	}
-	_, _ = h.conn.Write(payload) // best-effort; errors aren't actionable here
+	root.method = r.Method
+	root.path = r.URL.Path
+	root.status = uint16(rec.status)
+	root.Finish()
 }
 
 // traceContextFrom parses a W3C traceparent header
