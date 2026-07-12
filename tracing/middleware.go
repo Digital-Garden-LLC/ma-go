@@ -13,7 +13,12 @@ import (
 	"time"
 )
 
-const defaultAgentAddr = "127.0.0.1:8126"
+// DefaultAgentAddr is the local agent's default UDP trace listener
+// address, used unless overridden with WithAgentAddr. Exported so callers
+// that need to reference it explicitly -- e.g. resolving their own
+// fallback when an env var is unset -- don't have to duplicate the
+// literal.
+const DefaultAgentAddr = "127.0.0.1:8126"
 
 type config struct {
 	service   string
@@ -40,7 +45,7 @@ type handler struct {
 
 // Middleware wraps next, emitting one span per request to the local agent.
 func Middleware(next http.Handler, opts ...Option) http.Handler {
-	cfg := config{service: "unknown-service", agentAddr: defaultAgentAddr}
+	cfg := config{service: "unknown-service", agentAddr: DefaultAgentAddr}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
