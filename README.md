@@ -37,6 +37,17 @@ that satisfies that interface (e.g. `chi.Router`).
   in Grafana's `$service` dashboard variable.
 - `tracing.WithAgentAddr(addr)` — overrides where spans are sent, if the
   agent isn't listening on the default `127.0.0.1:8126`.
+- `tracing.WithQueryString()` — captures the request's raw query string as
+  the `query_string` tag. **Off by default** — query strings routinely carry
+  session tokens, emails, or other PII that `path` was deliberately kept
+  free of. Suspicious-looking values (keys matching `password`/`token`/
+  `secret`/`key`/`auth`/`session`/`credential`/`signature`) are redacted to
+  `<redacted>` before the span ever leaves this process, and the captured
+  value is truncated to 2048 bytes. This client-side redaction is
+  best-effort minimization, not the safety boundary — miniargus's own
+  ingestion API re-applies the same redaction server-side regardless of
+  what this SDK sends. See miniargus's SETUP.md Step 5 for the full
+  rationale.
 
 Incoming `traceparent` headers (W3C Trace Context) are honored — a request
 arriving with one continues that trace as a child span; otherwise a new
