@@ -110,6 +110,90 @@ func TestMiddleware_SendsSpanOverUDP(t *testing.T) {
 	}
 }
 
+func TestMiddleware_WithQueryString_CapturesRawQuery(t *testing.T) {
+	addr, recv := startUDPCollector(t)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	wrapped := Middleware(inner, WithAgentAddr(addr), WithQueryString())
+
+	req := httptest.NewRequest(http.MethodGet, "/search?page=2&sort=price", nil)
+	w := httptest.NewRecorder()
+	wrapped.ServeHTTP(w, req)
+
+	select {
+	case s := <-recv:
+		if s.Path != "/search" {
+			t.Errorf("Path = %q, want /search (unaffected by query capture)", s.Path)
+		}
+		if got := s.Tags["query_string"]; got != "page=2&sort=price" {
+			t.Errorf("Tags[query_string] = %q, want %q", got, "page=2&sort=price")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for span over UDP")
+	}
+}
+
+func TestMiddleware_WithoutOption_QueryStringNotCaptured(t *testing.T) {
+	addr, recv := startUDPCollector(t)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	wrapped := Middleware(inner, WithAgentAddr(addr))
+
+	req := httptest.NewRequest(http.MethodGet, "/search?page=2", nil)
+	w := httptest.NewRecorder()
+	wrapped.ServeHTTP(w, req)
+
+	select {
+	case s := <-recv:
+		if _, ok := s.Tags["query_string"]; ok {
+			t.Errorf("Tags[query_string] = %q, want absent (option not set)", s.Tags["query_string"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for span over UDP")
+	}
+}
+
+func TestMiddleware_WithQueryString_NoQueryStringPresent_TagAbsent(t *testing.T) {
+	addr, recv := startUDPCollector(t)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	wrapped := Middleware(inner, WithAgentAddr(addr), WithQueryString())
+
+	req := httptest.NewRequest(http.MethodGet, "/search", nil)
+	w := httptest.NewRecorder()
+	wrapped.ServeHTTP(w, req)
+
+	select {
+	case s := <-recv:
+		if _, ok := s.Tags["query_string"]; ok {
+			t.Errorf("Tags[query_string] = %q, want absent (no query string on request)", s.Tags["query_string"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for span over UDP")
+	}
+}
+
+func TestMiddleware_WithQueryString_RedactsSensitiveValues(t *testing.T) {
+	addr, recv := startUDPCollector(t)
+
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	wrapped := Middleware(inner, WithAgentAddr(addr), WithQueryString())
+
+	req := httptest.NewRequest(http.MethodGet, "/search?page=2&token=abc123", nil)
+	w := httptest.NewRecorder()
+	wrapped.ServeHTTP(w, req)
+
+	select {
+	case s := <-recv:
+		want := "page=2&token=<redacted>"
+		if got := s.Tags["query_string"]; got != want {
+			t.Errorf("Tags[query_string] = %q, want %q", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for span over UDP")
+	}
+}
+
 func TestMiddleware_DefaultStatusIsOKWhenHandlerNeverCallsWriteHeader(t *testing.T) {
 	addr, recv := startUDPCollector(t)
 
