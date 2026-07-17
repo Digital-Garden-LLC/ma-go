@@ -21,8 +21,9 @@ import (
 const DefaultAgentAddr = "127.0.0.1:8126"
 
 type config struct {
-	service   string
-	agentAddr string
+	service            string
+	agentAddr          string
+	captureQueryString bool
 }
 
 type Option func(*config)
@@ -35,6 +36,20 @@ func WithServiceName(name string) Option {
 // (default 127.0.0.1:8126, matching the agent's default).
 func WithAgentAddr(addr string) Option {
 	return func(c *config) { c.agentAddr = addr }
+}
+
+// WithQueryString captures the request's raw query string as the root
+// span's "query_string" tag -- off by default, since query strings
+// routinely carry session tokens, emails, or other PII that path was
+// deliberately kept free of. Suspicious-looking values (keys matching
+// password/token/secret/key/auth/session/credential/signature) are
+// redacted before the span ever leaves this process, and the captured
+// value is truncated to 2048 bytes -- see redact.go. This client-side
+// redaction is best-effort minimization, not the safety boundary:
+// miniargus's own ingestion API re-applies the same redaction server-side
+// regardless of what this SDK sends.
+func WithQueryString() Option {
+	return func(c *config) { c.captureQueryString = true }
 }
 
 type handler struct {
@@ -87,6 +102,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	root.method = r.Method
 	root.path = r.URL.Path
 	root.status = uint16(rec.status)
+	if h.cfg.captureQueryString && r.URL.RawQuery != "" {
+		root.tags["query_string"] = redactQueryString(r.URL.RawQuery)
+	}
 	root.Finish()
 }
 
